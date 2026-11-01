@@ -114,7 +114,7 @@
 
     /* Smooth Collapsible Drawer Animation */
     #bottomDrawerSheet {
-      transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+      transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, padding 0.2s ease;
     }
   </style>
 </head>
@@ -144,6 +144,11 @@
 
     <!-- Top Quick Actions -->
     <div class="flex items-center gap-1.5">
+      <!-- Quick Undo Button -->
+      <button id="btnUndoAction" onclick="performUndo()" disabled title="واگرد آخرین تغییر (Ctrl+Z)" class="h-8 w-8 rounded-xl bg-slate-900 border border-slate-700/80 text-slate-300 flex items-center justify-center text-xs font-bold transition active:scale-95 disabled:opacity-35 disabled:pointer-events-none">
+        <i class="ph-bold ph-arrow-u-up-right text-sm text-metro-neon"></i>
+      </button>
+
       <!-- Instagram Safe Zone Toggle -->
       <button id="btnToggleSafeZone" onclick="toggleSafeZones()" class="h-8 px-2.5 rounded-xl bg-slate-900 border border-slate-700/80 text-slate-300 flex items-center gap-1 text-[11px] font-semibold transition active:scale-95">
         <i class="ph-bold ph-frame-corners text-sm text-metro-neon"></i>
@@ -203,7 +208,7 @@
           <i class="ph-bold ph-align-center-horizontal text-xs"></i>
         </button>
         <button onclick="bringSelectedToFront()" title="آوردن به رو" class="w-6 h-6 rounded-md bg-slate-800 text-slate-200 flex items-center justify-center active:scale-90">
-          <i class="ph-bold ph-stack Simple text-xs"></i>
+          <i class="ph-bold ph-stack-simple text-xs"></i>
         </button>
         <button onclick="duplicateSelectedLayer()" title="کپی لایه" class="w-6 h-6 rounded-md bg-slate-800 text-slate-200 flex items-center justify-center active:scale-90">
           <i class="ph-bold ph-copy text-xs"></i>
@@ -381,13 +386,13 @@
           <div class="flex items-center justify-between pt-1 border-t border-slate-800/80">
             <span class="text-[10px] text-slate-400">چیدمان خطوط متن:</span>
             <div class="flex bg-slate-950 rounded-lg p-0.5 border border-slate-800">
-              <button onclick="setTextAlign('right')" class="px-2.5 py-0.5 rounded text-[10px] text-slate-300 hover:text-white flex items-center gap-1">
+              <button id="align-right" onclick="setTextAlign('right')" class="px-2.5 py-0.5 rounded text-[10px] text-slate-300 hover:text-white flex items-center gap-1">
                 <i class="ph-bold ph-text-align-right"></i><span>راست</span>
               </button>
-              <button onclick="setTextAlign('center')" class="px-2.5 py-0.5 rounded text-[10px] text-metro-neon font-bold flex items-center gap-1">
+              <button id="align-center" onclick="setTextAlign('center')" class="px-2.5 py-0.5 rounded text-[10px] text-metro-neon font-bold flex items-center gap-1">
                 <i class="ph-bold ph-text-align-center"></i><span>وسط</span>
               </button>
-              <button onclick="setTextAlign('left')" class="px-2.5 py-0.5 rounded text-[10px] text-slate-300 hover:text-white flex items-center gap-1">
+              <button id="align-left" onclick="setTextAlign('left')" class="px-2.5 py-0.5 rounded text-[10px] text-slate-300 hover:text-white flex items-center gap-1">
                 <i class="ph-bold ph-text-align-left"></i><span>چپ</span>
               </button>
             </div>
@@ -422,7 +427,7 @@
       <div id="panel-presets" class="hidden space-y-2">
         <span class="text-[10px] text-slate-400 font-semibold block">تمپلیت‌های آماده ریپلای، کادر لینک و هدرهای مترو آرت و متروکیت:</span>
         <div class="grid grid-cols-2 gap-1.5">
-          <!-- NEW: Reply for Specs & Order (Featured Full-Width / Top Priority) -->
+          <!-- Reply for Specs & Order (Featured Full-Width / Top Priority) -->
           <button onclick="insertMetroSticker('reply-order-ios')" class="col-span-2 p-2.5 rounded-xl bg-gradient-to-r from-cyan-500/20 via-slate-900 to-amber-500/20 border border-metro-neon text-right flex items-center justify-between gap-2 active:scale-95 neon-glow">
             <div class="flex items-center gap-2">
               <span class="text-lg">💬</span>
@@ -690,7 +695,6 @@
 
     function initPwaCapabilities() {
       try {
-        // Generate SVG Icon for Metro Studio
         const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
           <rect width="512" height="512" rx="115" fill="#070B14"/>
           <rect x="24" y="24" width="464" height="464" rx="95" fill="none" stroke="#00F0FF" stroke-width="16"/>
@@ -751,17 +755,19 @@
     function downloadStandaloneHtmlFile() {
       const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
       const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       a.download = 'metro-story-studio.html';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2500);
       showToast('فایل مستقل استودیو دانلود شد ✅');
     }
 
     // =========================================================================
-    // 2. CORE STATE & CONFIGURATION
+    // 2. CORE STATE, UNDO HISTORY & CONFIGURATION
     // =========================================================================
     const canvas = document.getElementById('storyCanvas');
     const ctx = canvas.getContext('2d');
@@ -770,6 +776,19 @@
 
     const STAGE_W = 1080;
     const STAGE_H = 1920;
+
+    // Cross-Browser Blur Buffer Canvases (Ensures smooth blur even on iOS Safari where ctx.filter is unsupported)
+    const blurBufferA = document.createElement('canvas');
+    blurBufferA.width = 54;
+    blurBufferA.height = 96;
+    const blurCtxA = blurBufferA.getContext('2d');
+
+    const blurBufferB = document.createElement('canvas');
+    blurBufferB.width = 27;
+    blurBufferB.height = 48;
+    const blurCtxB = blurBufferB.getContext('2d');
+
+    let currentMediaObjectUrl = null;
 
     // Media & Aspect Ratio State
     let mediaState = {
@@ -792,15 +811,60 @@
     let emojiInsertMode = 'sticker'; // 'sticker' | 'inline'
     let activeEmojiCategory = 'sports';
 
-    // Interactive Canvas Layers
+    // Interactive Canvas Layers & Undo Stack
     let layers = [];
+    let undoHistory = [];
+    const MAX_UNDO_STEPS = 30;
     let selectedLayerId = null;
     let modalEditingLayerId = null;
 
+    function pushUndoSnapshot() {
+      const cleanLayers = layers.map(l => {
+        const copy = Object.assign({}, l);
+        delete copy.bounds;
+        delete copy.localBounds;
+        return copy;
+      });
+      undoHistory.push(JSON.stringify({
+        layers: cleanLayers,
+        selectedLayerId
+      }));
+      if (undoHistory.length > MAX_UNDO_STEPS) {
+        undoHistory.shift();
+      }
+      updateUndoButtonUI();
+    }
+
+    function updateUndoButtonUI() {
+      const btn = document.getElementById('btnUndoAction');
+      if (btn) btn.disabled = undoHistory.length === 0;
+    }
+
+    function performUndo() {
+      if (undoHistory.length === 0) return;
+      try {
+        const snap = JSON.parse(undoHistory.pop());
+        layers = snap.layers || [];
+        selectLayerById(snap.selectedLayerId || null);
+        updateUndoButtonUI();
+        showToast('↩️ بازگشت به مرحله قبل انجام شد');
+      } catch (e) {}
+    }
+
+    window.addEventListener('keydown', (e) => {
+      const activeTag = document.activeElement ? document.activeElement.tagName : '';
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        e.preventDefault();
+        performUndo();
+      }
+    });
+
     // Touch / Pointer Manipulation State
-    let pointerMode = 'none'; // 'none' | 'drag' | 'scale'
+    let pointerMode = 'none'; // 'none' | 'drag' | 'scale' | 'pan-media'
     let dragStartPt = { x: 0, y: 0 };
     let layerStartPos = { x: 0, y: 0 };
+    let mediaStartPan = { x: 0, y: 0 };
     let scaleStartDist = 1;
     let scaleStartSize = 64;
     let scaleStartFactor = 1;
@@ -906,11 +970,13 @@
       const sel = layers.find(l => l.id === selectedLayerId);
 
       if (emojiInsertMode === 'inline' && sel && sel.type === 'text') {
+        pushUndoSnapshot();
         sel.text += ` ${emojiChar}`;
         showToast(`ایموجی ${emojiChar} به متن اضافه شد`);
         return;
       }
 
+      pushUndoSnapshot();
       const newSticker = {
         id: 'emoji_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
         type: 'emoji',
@@ -926,10 +992,86 @@
     }
 
     // =========================================================================
-    // 3. RESPONSIVE STAGE SCALING (AUTOMATICALLY ADJUSTS WHEN DRAWER OPENS/CLOSES)
+    // 3. TAB NAVIGATION, COLLAPSIBLE BOTTOM DRAWER & RESPONSIVE STAGE SCALING
     // =========================================================================
+    const TAB_TITLES = {
+      media: 'رسانه و تنظیم ابعاد (Aspect Ratio)',
+      text: 'متن، فونت آیفونی و ۸ استایل کپسول',
+      emoji: 'ایموجی‌های اصلی آیفون (iOS Emojis)',
+      presets: 'تمپلیت‌های آماده مترو آرت و متروکیت',
+      export: 'خروجی باکیفیت عکس/ویدیو و نصب اپلیکیشن'
+    };
+
+    function switchTab(tabKey, forceOpen = false) {
+      const allTabs = ['media', 'text', 'emoji', 'presets', 'export'];
+      if (!allTabs.includes(tabKey)) tabKey = 'media';
+
+      // If user taps the already-active tab button in the bottom nav (and forceOpen isn't set), toggle the drawer
+      if (activeTabKey === tabKey && !forceOpen && !isDrawerOpen) {
+        toggleDrawerSheet(true);
+      } else if (!isDrawerOpen) {
+        toggleDrawerSheet(true);
+      }
+
+      activeTabKey = tabKey;
+
+      allTabs.forEach(k => {
+        const panel = document.getElementById(`panel-${k}`);
+        const btn = document.getElementById(`tabbtn-${k}`);
+        if (panel) {
+          if (k === tabKey) panel.classList.remove('hidden');
+          else panel.classList.add('hidden');
+        }
+        if (btn) {
+          if (k === tabKey) {
+            btn.className = 'tab-nav-btn flex flex-col items-center justify-center gap-0.5 py-1 px-2.5 rounded-xl text-metro-neon bg-metro-neonSoft';
+          } else {
+            btn.className = 'tab-nav-btn flex flex-col items-center justify-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-400';
+          }
+        }
+      });
+
+      const titleEl = document.getElementById('drawerHeaderTitle');
+      if (titleEl && TAB_TITLES[tabKey]) {
+        titleEl.textContent = TAB_TITLES[tabKey];
+      }
+
+      animateWorkspaceResize();
+    }
+
+    function toggleDrawerSheet(forceState = null) {
+      const sheet = document.getElementById('bottomDrawerSheet');
+      const txt = document.getElementById('drawerToggleText');
+      const icon = document.getElementById('drawerToggleIcon');
+      if (!sheet) return;
+
+      isDrawerOpen = typeof forceState === 'boolean' ? forceState : !isDrawerOpen;
+
+      if (isDrawerOpen) {
+        sheet.classList.remove('max-h-0', 'py-0', 'opacity-0', 'border-b-0', 'overflow-hidden');
+        sheet.classList.add('max-h-[33vh]', 'py-2.5', 'opacity-100', 'border-b', 'overflow-y-auto');
+        if (txt) txt.textContent = 'بستن پنل';
+        if (icon) icon.className = 'ph-bold ph-caret-down text-xs';
+      } else {
+        sheet.classList.remove('max-h-[33vh]', 'py-2.5', 'opacity-100', 'border-b', 'overflow-y-auto');
+        sheet.classList.add('max-h-0', 'py-0', 'opacity-0', 'border-b-0', 'overflow-hidden');
+        if (txt) txt.textContent = 'باز کردن پنل';
+        if (icon) icon.className = 'ph-bold ph-caret-up text-xs';
+      }
+
+      animateWorkspaceResize();
+    }
+
+    function animateWorkspaceResize() {
+      fitCanvasToWorkspace();
+      [40, 100, 180, 290].forEach(delay => {
+        setTimeout(fitCanvasToWorkspace, delay);
+      });
+    }
+
     function fitCanvasToWorkspace() {
       const ws = document.getElementById('canvasWorkspace');
+      if (!ws) return;
       const availW = ws.clientWidth - 10;
       const availH = ws.clientHeight - 10;
       const targetAspect = STAGE_W / STAGE_H; // 0.5625
@@ -959,7 +1101,12 @@
       const file = e.target.files[0];
       if (!file) return;
 
+      if (currentMediaObjectUrl) {
+        try { URL.revokeObjectURL(currentMediaObjectUrl); } catch (err) {}
+      }
+
       const url = URL.createObjectURL(file);
+      currentMediaObjectUrl = url;
       const videoStrip = document.getElementById('videoPlaybackStrip');
 
       // Reset dimming so uploaded photo/video is 100% clear immediately
@@ -977,7 +1124,7 @@
         });
         videoStrip.classList.remove('hidden');
         syncVideoMuteIcon();
-        setTimeout(fitCanvasToWorkspace, 50);
+        animateWorkspaceResize();
         showToast('🎬 ویدیو بارگذاری شد (می‌توانید ریشیو را تغییر دهید)');
       } else if (file.type.startsWith('image/')) {
         videoEl.pause();
@@ -986,7 +1133,7 @@
         img.onload = () => {
           mediaState.type = 'image';
           mediaState.img = img;
-          setTimeout(fitCanvasToWorkspace, 50);
+          animateWorkspaceResize();
           showToast('🖼️ تصویر بارگذاری شد');
         };
         img.src = url;
@@ -1108,7 +1255,7 @@
     });
 
     // =========================================================================
-    // 5. 60FPS CANVAS RENDERING PIPELINE
+    // 5. 60FPS CANVAS RENDERING PIPELINE (WITH iOS SAFARI BLUR FALLBACK)
     // =========================================================================
     function renderSingleStoryFrame() {
       ctx.clearRect(0, 0, STAGE_W, STAGE_H);
@@ -1137,7 +1284,7 @@
       // 5. Active Layer Selection Handles (Hidden during export)
       if (!isExportingNow && selectedLayerId) {
         const active = layers.find(l => l.id === selectedLayerId);
-        if (active && active.bounds) {
+        if (active && active.localBounds) {
           drawSelectionHandles(active);
         }
       }
@@ -1189,10 +1336,9 @@
       const srcRatio = srcW / srcH;
       const stageRatio = STAGE_W / STAGE_H;
 
-      // 1. Optional Blurred Background Fill when media doesn't cover 9:16
+      // 1. Cross-Browser Blurred Background Fill (Works on iOS Safari AND Android/Desktop)
       if (mediaState.backdropFill === 'blur' && mediaState.ratioMode !== '9:16') {
         ctx.save();
-        ctx.filter = 'blur(42px) brightness(0.45)';
         let bgW, bgH;
         if (srcRatio > stageRatio) {
           bgH = STAGE_H;
@@ -1201,7 +1347,32 @@
           bgW = STAGE_W;
           bgH = bgW / srcRatio;
         }
-        ctx.drawImage(sourceEl, (STAGE_W - bgW) / 2, (STAGE_H - bgH) / 2, bgW, bgH);
+        const bgX = (STAGE_W - bgW) / 2;
+        const bgY = (STAGE_H - bgH) / 2;
+
+        // Multi-pass offscreen downscale blur (guaranteed to blur on iOS Safari even if ctx.filter is ignored)
+        blurCtxA.imageSmoothingEnabled = true;
+        blurCtxB.imageSmoothingEnabled = true;
+        blurCtxA.clearRect(0, 0, blurBufferA.width, blurBufferA.height);
+        blurCtxA.drawImage(
+          sourceEl,
+          (bgX / STAGE_W) * blurBufferA.width,
+          (bgY / STAGE_H) * blurBufferA.height,
+          (bgW / STAGE_W) * blurBufferA.width,
+          (bgH / STAGE_H) * blurBufferA.height
+        );
+        blurCtxB.clearRect(0, 0, blurBufferB.width, blurBufferB.height);
+        blurCtxB.drawImage(blurBufferA, 0, 0, blurBufferB.width, blurBufferB.height);
+        blurCtxA.drawImage(blurBufferB, 0, 0, blurBufferA.width, blurBufferA.height);
+
+        ctx.imageSmoothingEnabled = true;
+        try { ctx.filter = 'blur(26px)'; } catch (e) {}
+        ctx.drawImage(blurBufferA, -40, -40, STAGE_W + 80, STAGE_H + 80);
+        try { ctx.filter = 'none'; } catch (e) {}
+
+        // Darkening glaze so foreground media and texts pop cleanly
+        ctx.fillStyle = 'rgba(5, 8, 17, 0.54)';
+        ctx.fillRect(0, 0, STAGE_W, STAGE_H);
         ctx.restore();
       }
 
@@ -1390,11 +1561,17 @@
           ctx.fillText(layer.char, 0, 0);
         }
 
-        layer.bounds = {
-          x: layer.x - s / 2 - 16,
-          y: layer.y - s / 2 - 16,
+        layer.localBounds = {
+          x: -s / 2 - 16,
+          y: -s / 2 - 16,
           w: s + 32,
           h: s + 32
+        };
+        layer.bounds = {
+          x: layer.x + layer.localBounds.x,
+          y: layer.y + layer.localBounds.y,
+          w: layer.localBounds.w,
+          h: layer.localBounds.h
         };
         ctx.restore();
         return;
@@ -1442,11 +1619,17 @@
           ctx.drawImage(linkRec.img, -boxW / 2 + 36, -boxH / 2 + 16 + (boxH - 54) / 2, 54, 54);
         }
 
-        layer.bounds = {
-          x: layer.x - (boxW / 2 + 20) * sc,
-          y: layer.y - 135 * sc,
+        layer.localBounds = {
+          x: -(boxW / 2 + 20) * sc,
+          y: -135 * sc,
           w: (boxW + 40) * sc,
           h: 235 * sc
+        };
+        layer.bounds = {
+          x: layer.x + layer.localBounds.x,
+          y: layer.y + layer.localBounds.y,
+          w: layer.localBounds.w,
+          h: layer.localBounds.h
         };
         ctx.restore();
         return;
@@ -1566,11 +1749,17 @@
           renderTokenizedLineRTL(tokens, lineCenterX, ly, lw, fontSize, strokeSpec);
         });
 
-        layer.bounds = {
-          x: layer.x - boxW / 2 - 12,
-          y: layer.y - boxH / 2 - 12,
+        layer.localBounds = {
+          x: -boxW / 2 - 12,
+          y: -boxH / 2 - 12,
           w: boxW + 24,
           h: boxH + 24
+        };
+        layer.bounds = {
+          x: layer.x + layer.localBounds.x,
+          y: layer.y + layer.localBounds.y,
+          w: layer.localBounds.w,
+          h: layer.localBounds.h
         };
       }
 
@@ -1587,19 +1776,26 @@
       context.closePath();
     }
 
+    // Rotated-aware Selection Box & Handles
     function drawSelectionHandles(layer) {
-      const b = layer.bounds;
+      const lb = layer.localBounds;
+      if (!lb) return;
       ctx.save();
+      ctx.translate(layer.x, layer.y);
+      if (layer.rotation) {
+        ctx.rotate((layer.rotation * Math.PI) / 180);
+      }
+
       ctx.strokeStyle = '#00F0FF';
       ctx.lineWidth = 3.5;
       ctx.setLineDash([12, 8]);
-      drawRoundedRectPath(ctx, b.x, b.y, b.w, b.h, 20);
+      drawRoundedRectPath(ctx, lb.x, lb.y, lb.w, lb.h, 20);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Bottom-Left Resize Handle
-      const hx = b.x;
-      const hy = b.y + b.h;
+      // Bottom-Left Resize Handle (in layer's local space)
+      const hx = lb.x;
+      const hy = lb.y + lb.h;
       ctx.fillStyle = '#00F0FF';
       ctx.beginPath();
       ctx.arc(hx, hy, 22, 0, Math.PI * 2);
@@ -1608,9 +1804,9 @@
       ctx.strokeStyle = '#070B14';
       ctx.stroke();
 
-      // Top-Right Delete Handle
-      const dx = b.x + b.w;
-      const dy = b.y;
+      // Top-Right Delete Handle (in layer's local space)
+      const dx = lb.x + lb.w;
+      const dy = lb.y;
       ctx.fillStyle = '#F43F5E';
       ctx.beginPath();
       ctx.arc(dx, dy, 20, 0, Math.PI * 2);
@@ -1625,6 +1821,19 @@
       ctx.stroke();
 
       ctx.restore();
+    }
+
+    // Inverse-rotate a canvas point into the layer's local coordinate system
+    function toLayerLocalPoint(pt, layer) {
+      const dx = pt.x - layer.x;
+      const dy = pt.y - layer.y;
+      const rad = -((layer.rotation || 0) * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return {
+        x: dx * cos - dy * sin,
+        y: dx * sin + dy * cos
+      };
     }
 
     function drawInstagramSafeZones() {
@@ -1672,7 +1881,7 @@
     }
 
     // =========================================================================
-    // 7. TOUCH & POINTER GESTURES ON CANVAS
+    // 7. TOUCH & POINTER GESTURES ON CANVAS (ROTATION-ACCURATE + MEDIA PAN)
     // =========================================================================
     function getCanvasPoint(evt) {
       const rect = canvas.getBoundingClientRect();
@@ -1687,33 +1896,38 @@
     canvas.addEventListener('pointerdown', (e) => {
       const pt = getCanvasPoint(e);
 
-      // Check active layer handles first
+      // 1. Check active layer handles first (in rotated local coordinates)
       const current = layers.find(l => l.id === selectedLayerId);
-      if (current && current.bounds) {
-        const b = current.bounds;
-        // Delete handle (Top-Right)
-        if (Math.hypot(pt.x - (b.x + b.w), pt.y - b.y) <= 42) {
+      if (current && current.localBounds) {
+        const lb = current.localBounds;
+        const localPt = toLayerLocalPoint(pt, current);
+
+        // Delete handle (Top-Right: lb.x + lb.w, lb.y)
+        if (Math.hypot(localPt.x - (lb.x + lb.w), localPt.y - lb.y) <= 44) {
           deleteSelectedLayer();
           return;
         }
-        // Resize handle (Bottom-Left)
-        if (Math.hypot(pt.x - b.x, pt.y - (b.y + b.h)) <= 46) {
+        // Resize handle (Bottom-Left: lb.x, lb.y + lb.h)
+        if (Math.hypot(localPt.x - lb.x, localPt.y - (lb.y + lb.h)) <= 48) {
+          pushUndoSnapshot();
           pointerMode = 'scale';
           scaleStartDist = Math.hypot(pt.x - current.x, pt.y - current.y) || 1;
           scaleStartSize = current.size || 64;
           scaleStartFactor = current.scale || 1;
-          canvas.setPointerCapture(e.pointerId);
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
           return;
         }
       }
 
-      // Hit test layers top-down
+      // 2. Hit test layers top-down (using rotated local coordinates)
       let hit = null;
       for (let i = layers.length - 1; i >= 0; i--) {
         const l = layers[i];
-        if (!l.bounds) continue;
-        if (pt.x >= l.bounds.x && pt.x <= l.bounds.x + l.bounds.w &&
-            pt.y >= l.bounds.y && pt.y <= l.bounds.y + l.bounds.h) {
+        if (!l.localBounds) continue;
+        const lb = l.localBounds;
+        const localPt = toLayerLocalPoint(pt, l);
+        if (localPt.x >= lb.x && localPt.x <= lb.x + lb.w &&
+            localPt.y >= lb.y && localPt.y <= lb.y + lb.h) {
           hit = l;
           break;
         }
@@ -1728,19 +1942,38 @@
         }
         lastTapTimestamp = now;
 
+        pushUndoSnapshot();
         selectLayerById(hit.id);
         pointerMode = 'drag';
         dragStartPt = pt;
         layerStartPos = { x: hit.x, y: hit.y };
-        canvas.setPointerCapture(e.pointerId);
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
       } else {
         selectLayerById(null);
+        // Allow direct finger panning of the background photo/video when dragging on empty canvas
+        if (mediaState.type !== 'none') {
+          pointerMode = 'pan-media';
+          dragStartPt = pt;
+          mediaStartPan = { x: mediaState.panX, y: mediaState.panY };
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        }
       }
     });
 
     canvas.addEventListener('pointermove', (e) => {
       if (pointerMode === 'none') return;
       const pt = getCanvasPoint(e);
+
+      if (pointerMode === 'pan-media') {
+        const nx = Math.round(Math.max(-400, Math.min(400, mediaStartPan.x + (pt.x - dragStartPt.x))));
+        const ny = Math.round(Math.max(-500, Math.min(500, mediaStartPan.y + (pt.y - dragStartPt.y))));
+        mediaState.panX = nx;
+        mediaState.panY = ny;
+        document.getElementById('sliderMediaX').value = nx;
+        document.getElementById('sliderMediaY').value = ny;
+        return;
+      }
+
       const sel = layers.find(l => l.id === selectedLayerId);
       if (!sel) return;
 
@@ -1749,10 +1982,11 @@
         const ratio = Math.max(0.4, Math.min(2.6, dist / scaleStartDist));
         if (sel.type === 'link-box') {
           sel.scale = Math.max(0.6, Math.min(1.45, scaleStartFactor * ratio));
+          document.getElementById('sliderTextSize').value = Math.round(sel.scale * 100);
         } else {
           sel.size = Math.round(Math.max(28, Math.min(260, scaleStartSize * ratio)));
-          if (sel.type === 'text') {
-            document.getElementById('sliderTextSize').value = sel.size;
+          if (sel.type === 'text' || sel.type === 'emoji') {
+            document.getElementById('sliderTextSize').value = Math.min(160, sel.size);
           }
         }
         return;
@@ -1771,13 +2005,43 @@
       }
     });
 
-    canvas.addEventListener('pointerup', () => {
+    function endCanvasPointerGesture() {
       pointerMode = 'none';
-    });
+    }
+
+    canvas.addEventListener('pointerup', endCanvasPointerGesture);
+    canvas.addEventListener('pointercancel', endCanvasPointerGesture);
+    canvas.addEventListener('lostpointercapture', endCanvasPointerGesture);
 
     // =========================================================================
-    // 8. LAYER SELECTION & TYPOGRAPHY CONTROLS
+    // 8. LAYER SELECTION & TYPOGRAPHY CONTROLS (WITH FULL UI SYNC)
     // =========================================================================
+    function syncFontButtonsUI(activeFontKey) {
+      ['ios', 'vazir', 'lalezar', 'rubik', 'markazi'].forEach(k => {
+        const b = document.getElementById(`font-${k}`);
+        if (!b) return;
+        if (k === activeFontKey) {
+          b.classList.add('bg-metro-neon', 'text-slate-950');
+          b.classList.remove('bg-slate-800', 'text-slate-200');
+        } else {
+          b.classList.remove('bg-metro-neon', 'text-slate-950');
+          b.classList.add('bg-slate-800', 'text-slate-200');
+        }
+      });
+    }
+
+    function syncAlignButtonsUI(activeAlign) {
+      ['right', 'center', 'left'].forEach(k => {
+        const b = document.getElementById(`align-${k}`);
+        if (!b) return;
+        if (k === activeAlign) {
+          b.className = 'px-2.5 py-0.5 rounded text-[10px] text-metro-neon font-bold bg-metro-neonSoft flex items-center gap-1';
+        } else {
+          b.className = 'px-2.5 py-0.5 rounded text-[10px] text-slate-300 hover:text-white flex items-center gap-1';
+        }
+      });
+    }
+
     function selectLayerById(id) {
       selectedLayerId = id;
       const defBar = document.getElementById('contextDefaultBar');
@@ -1800,34 +2064,42 @@
         editBtn.classList.remove('hidden');
         document.getElementById('sliderTextSize').value = sel.size || 64;
         document.getElementById('sliderBoxOpacity').value = sel.boxOpacity ?? 85;
+        syncFontButtonsUI(sel.fontKey || 'ios');
+        syncAlignButtonsUI(sel.align || 'center');
       } else if (sel.type === 'link-box') {
         badge.textContent = 'کادر لینک';
         editBtn.classList.remove('hidden');
+        document.getElementById('sliderTextSize').value = Math.round((sel.scale || 1) * 100);
       } else {
         badge.textContent = `ایموجی ${sel.char}`;
         editBtn.classList.add('hidden');
+        document.getElementById('sliderTextSize').value = Math.min(160, sel.size || 145);
       }
     }
 
     function scaleSelectedLayer(factor) {
       const sel = layers.find(l => l.id === selectedLayerId);
       if (!sel) return;
+      pushUndoSnapshot();
       if (sel.type === 'link-box') {
         sel.scale = Math.max(0.6, Math.min(1.45, (sel.scale || 1) * factor));
       } else {
         sel.size = Math.round(Math.max(28, Math.min(260, (sel.size || 64) * factor)));
+        document.getElementById('sliderTextSize').value = Math.min(160, sel.size);
       }
     }
 
     function rotateSelectedLayer(degDelta) {
       const sel = layers.find(l => l.id === selectedLayerId);
       if (!sel) return;
+      pushUndoSnapshot();
       sel.rotation = ((sel.rotation || 0) + degDelta) % 360;
     }
 
     function centerSelectedLayer() {
       const sel = layers.find(l => l.id === selectedLayerId);
       if (!sel) return;
+      pushUndoSnapshot();
       sel.x = STAGE_W / 2;
       showToast('در مرکز افقی تراز شد');
     }
@@ -1835,6 +2107,7 @@
     function bringSelectedToFront() {
       const idx = layers.findIndex(l => l.id === selectedLayerId);
       if (idx === -1 || idx === layers.length - 1) return;
+      pushUndoSnapshot();
       const [item] = layers.splice(idx, 1);
       layers.push(item);
       showToast('لایه به رو آورده شد');
@@ -1843,6 +2116,7 @@
     function duplicateSelectedLayer() {
       const sel = layers.find(l => l.id === selectedLayerId);
       if (!sel) return;
+      pushUndoSnapshot();
       const clone = JSON.parse(JSON.stringify(sel));
       clone.id = 'layer_' + Date.now();
       clone.x = Math.min(STAGE_W - 100, sel.x + 40);
@@ -1854,35 +2128,29 @@
 
     function deleteSelectedLayer() {
       if (!selectedLayerId) return;
+      pushUndoSnapshot();
       layers = layers.filter(l => l.id !== selectedLayerId);
       selectLayerById(null);
-      showToast('لایه حذف شد');
+      showToast('لایه حذف شد (قابل بازگشت با دکمه واگرد ↩️)');
     }
 
     function clearAllCanvasLayers() {
+      if (layers.length === 0) return;
+      pushUndoSnapshot();
       layers = [];
       selectLayerById(null);
-      showToast('تمام لایه‌ها پاک شدند');
+      showToast('تمام لایه‌ها پاک شدند (قابل بازگشت با واگرد ↩️)');
     }
 
     function setTextFont(fontKey) {
-      ['ios', 'vazir', 'lalezar', 'rubik', 'markazi'].forEach(k => {
-        const b = document.getElementById(`font-${k}`);
-        if (!b) return;
-        if (k === fontKey) {
-          b.classList.add('bg-metro-neon', 'text-slate-950');
-          b.classList.remove('bg-slate-800', 'text-slate-200');
-        } else {
-          b.classList.remove('bg-metro-neon', 'text-slate-950');
-          b.classList.add('bg-slate-800', 'text-slate-200');
-        }
-      });
+      syncFontButtonsUI(fontKey);
 
       const sel = layers.find(l => l.id === selectedLayerId && l.type === 'text');
       if (!sel) {
         showToast('ابتدا یک متن اضافه یا انتخاب کنید');
         return;
       }
+      pushUndoSnapshot();
       sel.fontKey = fontKey;
     }
 
@@ -1892,6 +2160,7 @@
         showToast('ابتدا یک متن روی استوری انتخاب کنید');
         return;
       }
+      pushUndoSnapshot();
       sel.stylePreset = presetKey;
       if (presetKey === 'metro-neon') sel.color = '#00F0FF';
       if (presetKey === 'metro-gold') sel.color = '#F59E0B';
@@ -1902,14 +2171,18 @@
     function setTextColor(hex) {
       const sel = layers.find(l => l.id === selectedLayerId && l.type === 'text');
       if (!sel) return;
+      pushUndoSnapshot();
       sel.color = hex;
     }
 
     function setTextSize(val) {
       const sel = layers.find(l => l.id === selectedLayerId);
       if (!sel) return;
+      const num = Number(val);
       if (sel.type === 'text' || sel.type === 'emoji') {
-        sel.size = Number(val);
+        sel.size = num;
+      } else if (sel.type === 'link-box') {
+        sel.scale = Math.max(0.6, Math.min(1.45, num / 100));
       }
     }
 
@@ -1920,8 +2193,10 @@
     }
 
     function setTextAlign(alignKey) {
+      syncAlignButtonsUI(alignKey);
       const sel = layers.find(l => l.id === selectedLayerId && l.type === 'text');
       if (!sel) return;
+      pushUndoSnapshot();
       sel.align = alignKey;
     }
 
@@ -1971,6 +2246,7 @@
         return;
       }
 
+      pushUndoSnapshot();
       if (modalEditingLayerId) {
         const target = layers.find(l => l.id === modalEditingLayerId);
         if (target) {
@@ -2133,6 +2409,7 @@
       }
 
       if (item) {
+        pushUndoSnapshot();
         layers.push(item);
         selectLayerById(item.id);
         showToast('تمپلیت مترو روی استوری قرار گرفت');
@@ -2180,12 +2457,14 @@
           } catch (err) {}
         }
 
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        a.href = url;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
         showToast('تصویر استوری با کیفیت 1080×1920 ذخیره شد ✅');
       }, 'image/png', 1.0);
     }
@@ -2384,12 +2663,14 @@
           } catch (err) {}
         }
 
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        a.href = url;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
         showToast('ویدیوی کامل استوری با موفقیت دانلود شد 🎬✅');
       };
 
@@ -2459,6 +2740,7 @@
       initPwaCapabilities();
       renderEmojiCategoryGrid('sports');
       populateModalQuickEmojis();
+      updateUndoButtonUI();
       fitCanvasToWorkspace();
       requestAnimationFrame(renderStoryLoop);
     };
